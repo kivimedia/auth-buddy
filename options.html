@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auth Buddy Settings</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px; }
+    #drop { border: 2px dashed var(--line); border-radius: 12px; padding: 24px; text-align: center; }
+    #drop.over { border-color: var(--accent); }
+    .account { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px 0; border-top: 1px solid var(--line); }
+    .account:first-child { border-top: 0; }
+    .account .name { font-weight: 600; }
+    .account .live { font: 600 18px ui-monospace, Consolas, monospace; letter-spacing: 2px; }
+    .pending { border: 1px solid var(--accent); border-radius: 10px; padding: 12px; margin-top: 12px; }
+    label { display: block; font-weight: 600; margin: 8px 0 4px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Auth Buddy</h1>
+  <p class="muted">Fills in your authenticator codes on the sites you choose. Your secrets are encrypted with your PIN and never leave this computer.</p>
+
+  <section id="setup" class="card hidden">
+    <h2>Choose a PIN</h2>
+    <p class="muted">You enter it once each time you open Chrome. If you forget it, you have to add your accounts again.</p>
+    <div class="row">
+      <input id="newPin" type="password" placeholder="PIN, at least 4 characters" autocomplete="new-password" style="max-width:260px">
+      <input id="newPin2" type="password" placeholder="Same PIN again" autocomplete="new-password" style="max-width:260px">
+      <button id="createBtn" class="primary">Create</button>
+    </div>
+    <p id="setupErr" class="error"></p>
+  </section>
+
+  <section id="locked" class="card hidden">
+    <h2>Locked</h2>
+    <div class="row">
+      <input id="pin" type="password" placeholder="Your PIN" autocomplete="current-password" style="max-width:260px">
+      <button id="unlockBtn" class="primary">Unlock</button>
+    </div>
+    <p id="lockErr" class="error"></p>
+    <p class="muted">Forgot your PIN? <button id="resetBtn" class="danger">Erase all accounts and start over</button></p>
+  </section>
+
+  <div id="app" class="hidden">
+    <section class="card">
+      <h2>Add an account</h2>
+      <p class="muted">Use a picture of the QR code a site shows when you turn on two-factor login, or a Google Authenticator "Transfer accounts" export QR (adds many at once).</p>
+      <div id="drop">
+        <p><b>Drop a QR image here</b>, paste one with Ctrl+V, or</p>
+        <div class="row" style="justify-content:center">
+          <button id="pickBtn" class="primary">Choose image</button>
+          <input id="file" type="file" accept="image/*" multiple class="hidden">
+        </div>
+      </div>
+      <details style="margin-top:12px">
+        <summary>Or paste a setup key or otpauth:// link</summary>
+        <div class="row" style="margin-top:8px">
+          <input id="uri" type="text" placeholder="otpauth://totp/... or the setup key">
+          <button id="uriBtn">Add</button>
+        </div>
+      </details>
+      <p id="addErr" class="error"></p>
+      <div id="pending"></div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2>Your accounts</h2>
+        <button id="lockBtn">Lock now</button>
+      </div>
+      <div id="accounts"></div>
+      <p id="empty" class="muted">No accounts yet.</p>
+    </section>
+  </div>
+</main>
+<script src="vendor/jsQR.js"></script>
+<script type="module" src="src/options.js"></script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f1f5f9;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #334155;
+  --line: #cbd5e1;
+  --accent: #0f766e;
+  --accent-text: #ffffff;
+  --danger: #b91c1c;
+  --input-bg: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1220;
+    --card: #111a2e;
+    --text: #f1f5f9;
+    --muted: #cbd5e1;
+    --line: #334155;
+    --accent: #2dd4bf;
+    --accent-text: #042f2e;
+    --danger: #f87171;
+    --input-bg: #0b1220;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 16px; margin: 0 0 8px; }
+p { margin: 0 0 10px; }
+.muted { color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+input, select, button { font: inherit; }
+input[type="text"], input[type="password"], select {
+  background: var(--input-bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%;
+}
+button { cursor: pointer; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.error { color: var(--danger); min-height: 1.5em; }
+.hidden { display: none !important; }
+.code { font: 600 28px/1.1 ui-monospace, Consolas, monospace; letter-spacing: 3px; }

@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Auth Buddy",
+  "version": "0.1.0",
+  "description": "Fills in your authenticator (TOTP) codes on the sites you choose. Secrets stay encrypted on your computer.",
+  "icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "action": { "default_popup": "popup.html", "default_title": "Auth Buddy" },
+  "options_page": "options.html",
+  "background": { "service_worker": "src/background.js", "type": "module" },
+  "permissions": ["storage", "activeTab", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

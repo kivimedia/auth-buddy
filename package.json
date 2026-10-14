@@ -1,0 +1,15 @@
+{
+  "name": "auth-buddy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome extension that fills in your authenticator (TOTP) codes on the sites you choose.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1",
+    "qrcode": "^1.5.4"
+  }
+}
