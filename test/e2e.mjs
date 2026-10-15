@@ -115,14 +115,16 @@ try {
     { issuer: 'Mystery', label: '', secret: 'MFRGGZDFMZTWQ2LKNNWG23TPOBYXE43U', algorithm: 'SHA1', digits: 6, period: 30, domains: [] },
     { issuer: 'TestSite', label: 'dupe of the first', secret: SECRET, algorithm: 'SHA1', digits: 6, period: 30, domains: ['127.0.0.1'] },
   ], 'test backup passphrase')));
-  await opts.fill('#importPass', 'wrong passphrase!!');
-  await opts.click('#importBtn');
-  await opts.setInputFiles('#importFile', backupPath);
+  await opts.bringToFront(); // background tabs do not paint, which stalls screenshots and input
+  const importWith = async (pass) => {
+    await opts.fill('#importPass', pass);
+    // The native file chooser is flaky in headless Chromium; the import itself runs on the input's change event.
+    await opts.setInputFiles('#importFile', backupPath);
+  };
+  await importWith('wrong passphrase!!');
   await opts.waitForFunction(() => /Wrong|Imported/.test(document.getElementById('backupMsg').textContent));
   check('Backup with wrong passphrase refused', (await opts.textContent('#backupMsg')).includes('Wrong backup passphrase'));
-  await opts.fill('#importPass', 'test backup passphrase');
-  await opts.click('#importBtn');
-  await opts.setInputFiles('#importFile', backupPath);
+  await importWith('test backup passphrase');
   await opts.waitForFunction(() => /Imported/.test(document.getElementById('backupMsg').textContent));
   const msg = await opts.textContent('#backupMsg');
   check('Backup imported, duplicate skipped', msg.includes('Imported 2 accounts, 1 already saved'), msg);
@@ -130,6 +132,7 @@ try {
   await opts.screenshot({ path: path.join(out, 'settings-imported.png'), fullPage: true });
 
   // 3c. Two accounts on one site: picker appears, choosing the second fills ITS code
+  await p.bringToFront();
   await p.goto(`${site}/single`);
   const cdp = await ctx.newCDPSession(p);
   let target = null;
@@ -159,15 +162,30 @@ try {
   }
 
   // 4. Locked: no fill, toast instead
+  await opts.bringToFront();
   await opts.click('#lockBtn');
   await opts.waitForSelector('#locked:not(.hidden)');
+  await p.bringToFront();
   await p.goto(`${site}/single`);
   await p.waitForTimeout(2500);
   const val = await p.inputValue('#otp');
   check('Locked vault fills nothing', val === '' && !p.url().includes('/check'));
   await p.screenshot({ path: path.join(out, 'locked-toast.png') });
 
+  // 4b. A human TYPES the PIN, key by key (fill() bypasses keydown handlers and hid a bug)
+  await opts.bringToFront();
+  await opts.locator('#pin').pressSequentially('4321');
+  check('PIN box accepts typed keys (Settings)', (await opts.inputValue('#pin')) === '4321', `value "${await opts.inputValue('#pin')}"`);
+  await opts.fill('#pin', '');
+  const popLocked = await ctx.newPage();
+  await popLocked.goto(`chrome-extension://${(new URL(sw.url())).host}/popup.html`);
+  await popLocked.waitForSelector('#locked:not(.hidden)');
+  await popLocked.locator('#pin').pressSequentially('4321');
+  check('PIN box accepts typed keys (popup)', (await popLocked.inputValue('#pin')) === '4321', `value "${await popLocked.inputValue('#pin')}"`);
+  await popLocked.close();
+
   // 5. Unrelated site gets nothing even when unlocked
+  await opts.bringToFront();
   await opts.fill('#pin', '0000');
   await opts.click('#unlockBtn');
   await opts.waitForTimeout(1500);
@@ -175,6 +193,7 @@ try {
   await opts.fill('#pin', '4321');
   await opts.click('#unlockBtn');
   await opts.waitForSelector('#app:not(.hidden)');
+  await p.bringToFront();
   await p.goto(`http://localhost:${server.address().port}/single`);
   await p.waitForTimeout(2500);
   check('Other site (localhost, not 127.0.0.1) gets no code', (await p.inputValue('#otp')) === '');

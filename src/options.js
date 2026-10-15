@@ -54,7 +54,10 @@ async function doUnlock() {
   }
 }
 $('unlockBtn').onclick = doUnlock;
-$('pin').onkeydown = (e) => e.key === 'Enter' && doUnlock();
+// addEventListener, not onkeydown: an on-handler returning false (every non-Enter key) cancels the keystroke.
+$('pin').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doUnlock();
+});
 $('lockBtn').onclick = async () => {
   await call('lock');
   refresh();
