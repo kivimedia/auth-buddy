@@ -1,6 +1,6 @@
 {
   "name": "auth-buddy",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "Chrome extension that fills in your authenticator (TOTP) codes on the sites you choose.",
