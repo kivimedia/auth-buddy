@@ -30,7 +30,8 @@
     return [el.name, el.id, el.placeholder, el.getAttribute('aria-label'), el.getAttribute('data-testid'), label].join(' ');
   }
 
-  const textish = (el) => ['text', 'tel', 'number', ''].includes((el.getAttribute('type') || '').toLowerCase());
+  // el.type, not the attribute: an invalid type (SiteGround ships type="input") resolves to "text".
+  const textish = (el) => ['text', 'tel', 'number'].includes(el.type);
 
   // One input that takes the whole code.
   function findSingle(inputs) {

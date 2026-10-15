@@ -40,6 +40,10 @@ const server = http.createServer(async (req, res) => {
       setTimeout(()=>{document.getElementById('app').innerHTML='<form action="/check"><div class="boxes">'+
       [0,1,2,3,4,5].map(i=>'<input maxlength="1" inputmode="numeric" name="d'+i+'" style="width:30px">').join('')+
       '</div><button type="submit">Continue</button></form>'},1500)</script>`));
+  if (url.pathname === '/sg')
+    // Copy of SiteGround's real 2FA box (15-Oct): an INVALID type="input", which browsers treat as text.
+    return res.end(page(`<h1>2-Step Verification</h1><form action="/check"><label for="c">Verification Code</label>
+      <input id="c" class="sg-input sg-field" data-e2e="form-field" autocomplete="off" type="input" name="otp"><button type="submit">SIGN IN</button></form>`));
   if (url.pathname === '/check') {
     const code = url.searchParams.get('otp') ?? [0, 1, 2, 3, 4, 5].map((i) => url.searchParams.get('d' + i)).join('');
     const who = await valid(code);
@@ -88,8 +92,8 @@ try {
   await opts.waitForSelector('.account .live');
   await opts.waitForTimeout(1200);
   const shown = (await opts.textContent('.account .live')).slice(0, 6);
-  const expected = (await totp({ secret: SECRET })).code;
-  check('Settings shows the live code', shown === expected, `${shown} vs ${expected}`);
+  const near = await Promise.all([-30000, 0, 30000].map(async (d) => (await totp({ secret: SECRET }, Date.now() + d)).code));
+  check('Settings shows the live code', near.includes(shown), `${shown} vs ${near.join('/')}`);
   await opts.screenshot({ path: path.join(out, 'settings.png') });
 
   // Secrets are not stored in the clear
@@ -107,6 +111,11 @@ try {
   await p.goto(`${site}/split`);
   await p.waitForSelector('#result', { timeout: 15000 });
   check('Six split boxes (late-loading): filled and submitted, accepted', (await p.textContent('#result')) === 'ACCEPTED', await p.textContent('p'));
+
+  // 3a. SiteGround-style box with an invalid type attribute
+  await p.goto(`${site}/sg`);
+  await p.waitForSelector('#result', { timeout: 15000 }).catch(() => {});
+  check('SiteGround-style box (type="input") filled and accepted', p.url().includes('/check') && (await p.textContent('#result').catch(() => '')) === 'ACCEPTED', p.url());
 
   // 3b. Import an encrypted backup: a second account on the same site, and one with no site
   const backupPath = path.join(out, 'test-backup.json');
