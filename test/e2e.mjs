@@ -218,6 +218,39 @@ try {
   await pop.waitForSelector('#open:not(.hidden)');
   await pop.screenshot({ path: path.join(out, 'popup.png') });
   check('Popup opens unlocked', true);
+
+  // 8. QR by drag-and-drop and by Ctrl+V (a fresh Settings page, so nothing is pending)
+  const qrB64 = async (name) =>
+    (await QRCode.toBuffer(`otpauth://totp/${name}:ziv@example.com?secret=${name === 'DropSite' ? 'GEZDGNBVGY3TQOJQ' : 'MFRGGZDFMZTWQ2LK'}&issuer=${name}`, { width: 400 })).toString('base64');
+  const drag = await ctx.newPage();
+  await drag.goto(`chrome-extension://${extId}/options.html`);
+  await drag.waitForSelector('#app:not(.hidden)');
+  await drag.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], 'qr.png', { type: 'image/png' }));
+    const drop = document.getElementById('drop');
+    drop.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    drop.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, await qrB64('DropSite'));
+  await drag.waitForSelector('.pending', { timeout: 10000 }).catch(() => {});
+  const dropped = await drag.locator('.pending').allTextContents();
+  check('QR image dropped onto the box is read', dropped.join(' ').includes('DropSite'), dropped.join(' | ').slice(0, 80));
+
+  // Real clipboard: put a PNG on it, then press Ctrl+V like a person.
+  const paste = await ctx.newPage();
+  await paste.goto(`chrome-extension://${extId}/options.html`);
+  await paste.waitForSelector('#app:not(.hidden)');
+  await paste.bringToFront();
+  await paste.evaluate(async (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) })]);
+  }, await qrB64('PasteSite'));
+  await paste.locator('h1').click();
+  await paste.keyboard.press('Control+V');
+  await paste.waitForSelector('.pending', { timeout: 10000 }).catch(() => {});
+  const pasted = await paste.locator('.pending').allTextContents();
+  check('QR image pasted with Ctrl+V is read', pasted.join(' ').includes('PasteSite'), pasted.join(' | ').slice(0, 80));
 } catch (e) {
   check('e2e run', false, e.message);
 } finally {
