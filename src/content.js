@@ -94,43 +94,98 @@
     setTimeout(() => host.remove(), 6000);
   }
 
+  let picker = null;
+  let dismissed = false;
+
+  // Several saved accounts for this site: ask which one, right on the page.
+  function showPicker(choices, fields) {
+    if (picker) return;
+    picker = document.createElement('div');
+    const root = picker.attachShadow({ mode: 'closed' });
+    const style = document.createElement('style');
+    style.textContent = `
+      .box{position:fixed;z-index:2147483647;right:16px;bottom:16px;width:300px;max-height:60vh;overflow:auto;padding:12px;border-radius:10px;
+        background:#0f172a;color:#f8fafc;font:14px/1.4 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.3)}
+      b{color:#5eead4} p{margin:4px 0 8px}
+      button{display:block;width:100%;text-align:left;margin:6px 0 0;padding:8px 10px;border-radius:8px;border:1px solid #334155;
+        background:#1e293b;color:#f8fafc;font:inherit;cursor:pointer}
+      button:hover,button:focus{border-color:#5eead4;outline:none}
+      .x{background:transparent;border:0;color:#cbd5e1;text-align:right;padding:0;margin:0}`;
+    const box = document.createElement('div');
+    box.className = 'box';
+    const head = document.createElement('div');
+    head.innerHTML = '<b>Auth Buddy</b>';
+    const text = document.createElement('p');
+    text.textContent = 'Which account is this code for?';
+    box.append(head, text);
+    for (const c of choices) {
+      const b = document.createElement('button');
+      b.textContent = c.label ? `${c.issuer || 'Unnamed'}: ${c.label}` : c.issuer || 'Unnamed';
+      b.onclick = () => {
+        closePicker();
+        fill(fields, c.id);
+      };
+      box.append(b);
+    }
+    const x = document.createElement('button');
+    x.className = 'x';
+    x.textContent = 'Not now';
+    x.onclick = () => {
+      closePicker();
+      dismissed = true; // do not pop up again on this page
+    };
+    box.append(x);
+    root.append(style, box);
+    document.documentElement.appendChild(picker);
+  }
+
+  function closePicker() {
+    picker?.remove();
+    picker = null;
+  }
+
+  async function fill(fields, id) {
+    let r = await send({ type: 'codeForPage', id });
+    if (!r?.ok || !r.result.code) return;
+    // A code about to expire may be rejected by the time it is submitted: wait for the next one.
+    if (r.result.secondsLeft < 3) {
+      await new Promise((ok) => setTimeout(ok, (r.result.secondsLeft + 1) * 1000));
+      r = await send({ type: 'codeForPage', id });
+      if (!r?.ok || !r.result.code) return;
+    }
+    const code = r.result.code;
+    if (fields.length > 1) fields.forEach((el, i) => setValue(el, code[i] || ''));
+    else setValue(fields[0], code);
+    fields.forEach((el) => filled.add(el));
+
+    const btn = submitButton(fields[fields.length - 1]);
+    if (btn) {
+      setTimeout(() => {
+        // Only if the page has not already moved on by itself.
+        if (fields[0].isConnected && btn.isConnected && visible(btn)) btn.click();
+      }, 600);
+    }
+  }
+
   async function tryFill() {
-    if (busy) return;
+    if (busy || picker || dismissed) return;
     const inputs = [...document.querySelectorAll('input')];
     const split = findSplit(inputs);
     const single = split ? null : findSingle(inputs);
     if (!split && !single) return;
+    const fields = split || [single];
 
     busy = true;
     try {
-      let r = await send({ type: 'codeForPage' });
+      const r = await send({ type: 'codeForPage' });
       if (!r?.ok) return;
       if (r.result.locked) {
         if (!lockedToastShown) toast('Locked. Click the Auth Buddy icon in the toolbar and enter your PIN to fill this code.');
         lockedToastShown = true;
         return;
       }
-      if (!r.result.code) return;
-      // A code about to expire may be rejected by the time it is submitted: wait for the next one.
-      if (r.result.secondsLeft < 3) {
-        await new Promise((ok) => setTimeout(ok, (r.result.secondsLeft + 1) * 1000));
-        r = await send({ type: 'codeForPage' });
-        if (!r?.ok || !r.result.code) return;
-      }
-      const code = r.result.code;
-      const fields = split || [single];
-      if (split) split.forEach((el, i) => setValue(el, code[i] || ''));
-      else setValue(single, code);
-      fields.forEach((el) => filled.add(el));
-      if (r.result.many) toast(`Filled the ${r.result.issuer || 'first'} code. You have more than one account for this site: use the toolbar icon to pick another.`);
-
-      const btn = submitButton(fields[fields.length - 1]);
-      if (btn && !r.result.many) {
-        setTimeout(() => {
-          // Only if the page has not already moved on by itself.
-          if (fields[0].isConnected && btn.isConnected && visible(btn)) btn.click();
-        }, 600);
-      }
+      if (r.result.choose) return showPicker(r.result.choose, fields);
+      if (r.result.code) await fill(fields);
     } finally {
       busy = false;
     }

@@ -39,5 +39,6 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 button.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .error { color: var(--danger); min-height: 1.5em; }
+.ok { color: var(--accent); min-height: 1.5em; font-weight: 600; }
 .hidden { display: none !important; }
 .code { font: 600 28px/1.1 ui-monospace, Consolas, monospace; letter-spacing: 3px; }

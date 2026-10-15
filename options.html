@@ -70,8 +70,26 @@
         <h2>Your accounts</h2>
         <button id="lockBtn">Lock now</button>
       </div>
+      <input id="filter" type="text" placeholder="Search by name, account or site" autocomplete="off" style="margin:8px 0 4px">
       <div id="accounts"></div>
       <p id="empty" class="muted">No accounts yet.</p>
+    </section>
+
+    <section class="card">
+      <h2>Backup</h2>
+      <p class="muted">A backup file is encrypted with its own passphrase, separate from your PIN. Use it to move your accounts to another computer.</p>
+      <label for="importPass">Import a backup</label>
+      <div class="row">
+        <input id="importPass" type="password" placeholder="Backup passphrase" autocomplete="off" style="max-width:260px">
+        <button id="importBtn" class="primary">Choose backup file</button>
+        <input id="importFile" type="file" accept=".json,.abk,application/json" class="hidden">
+      </div>
+      <label for="exportPass">Export a backup</label>
+      <div class="row">
+        <input id="exportPass" type="password" placeholder="New passphrase, at least 8 characters" autocomplete="new-password" style="max-width:260px">
+        <button id="exportBtn">Download backup</button>
+      </div>
+      <p id="backupMsg" class="error"></p>
     </section>
   </div>
 </main>

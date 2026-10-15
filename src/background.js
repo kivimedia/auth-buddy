@@ -26,8 +26,11 @@ async function handle(msg, sender) {
       if ((await vault.status()) !== 'unlocked') return { locked: true };
       const matches = await matchesFor(host);
       if (!matches.length) return { none: true };
-      const { code, secondsLeft } = await totp(matches[0]);
-      return { code, secondsLeft, many: matches.length > 1, issuer: matches[0].issuer };
+      // Several accounts on one site: the page shows a picker and asks again with the chosen id.
+      const pick = msg.id ? matches.find((a) => a.id === msg.id) : matches.length === 1 ? matches[0] : null;
+      if (!pick) return { choose: matches.map((a) => ({ id: a.id, issuer: a.issuer, label: a.label })) };
+      const { code, secondsLeft } = await totp(pick);
+      return { code, secondsLeft, issuer: pick.issuer };
     }
   }
 

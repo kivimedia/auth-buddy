@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import QRCode from 'qrcode';
 import { totp } from '../src/totp.js';
+import { encryptBackup } from '../src/backup.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'test', 'output');
@@ -19,10 +20,12 @@ const qrPath = path.join(out, 'test-qr.png');
 await QRCode.toFile(qrPath, `otpauth://totp/TestSite:ziv@example.com?secret=${SECRET}&issuer=TestSite`, { width: 400 });
 
 // --- A fake site that asks for a code and checks it like a real one would ---
+const SECRET2 = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ'; // second test-only key, arrives by backup import
 const valid = async (code) => {
   const now = Date.now();
-  for (const skew of [-30000, 0, 30000]) if ((await totp({ secret: SECRET }, now + skew)).code === code) return true;
-  return false;
+  for (const [name, secret] of [['first', SECRET], ['second', SECRET2]])
+    for (const skew of [-30000, 0, 30000]) if ((await totp({ secret }, now + skew)).code === code) return name;
+  return null;
 };
 const page = (body) => `<!doctype html><html><body style="font:16px system-ui;padding:40px">${body}</body></html>`;
 const server = http.createServer(async (req, res) => {
@@ -39,8 +42,8 @@ const server = http.createServer(async (req, res) => {
       '</div><button type="submit">Continue</button></form>'},1500)</script>`));
   if (url.pathname === '/check') {
     const code = url.searchParams.get('otp') ?? [0, 1, 2, 3, 4, 5].map((i) => url.searchParams.get('d' + i)).join('');
-    const ok = await valid(code);
-    return res.end(page(`<h1 id="result">${ok ? 'ACCEPTED' : 'REJECTED'}</h1><p>code ${code}</p>`));
+    const who = await valid(code);
+    return res.end(page(`<h1 id="result">${who ? 'ACCEPTED' : 'REJECTED'}</h1><p>code ${code} account ${who}</p>`));
   }
   res.statusCode = 404;
   res.end('nope');
@@ -104,6 +107,56 @@ try {
   await p.goto(`${site}/split`);
   await p.waitForSelector('#result', { timeout: 15000 });
   check('Six split boxes (late-loading): filled and submitted, accepted', (await p.textContent('#result')) === 'ACCEPTED', await p.textContent('p'));
+
+  // 3b. Import an encrypted backup: a second account on the same site, and one with no site
+  const backupPath = path.join(out, 'test-backup.json');
+  fs.writeFileSync(backupPath, JSON.stringify(await encryptBackup([
+    { issuer: 'TestSite', label: 'second@example.com', secret: SECRET2, algorithm: 'SHA1', digits: 6, period: 30, domains: ['127.0.0.1'] },
+    { issuer: 'Mystery', label: '', secret: 'MFRGGZDFMZTWQ2LKNNWG23TPOBYXE43U', algorithm: 'SHA1', digits: 6, period: 30, domains: [] },
+    { issuer: 'TestSite', label: 'dupe of the first', secret: SECRET, algorithm: 'SHA1', digits: 6, period: 30, domains: ['127.0.0.1'] },
+  ], 'test backup passphrase')));
+  await opts.fill('#importPass', 'wrong passphrase!!');
+  await opts.click('#importBtn');
+  await opts.setInputFiles('#importFile', backupPath);
+  await opts.waitForFunction(() => /Wrong|Imported/.test(document.getElementById('backupMsg').textContent));
+  check('Backup with wrong passphrase refused', (await opts.textContent('#backupMsg')).includes('Wrong backup passphrase'));
+  await opts.fill('#importPass', 'test backup passphrase');
+  await opts.click('#importBtn');
+  await opts.setInputFiles('#importFile', backupPath);
+  await opts.waitForFunction(() => /Imported/.test(document.getElementById('backupMsg').textContent));
+  const msg = await opts.textContent('#backupMsg');
+  check('Backup imported, duplicate skipped', msg.includes('Imported 2 accounts, 1 already saved'), msg);
+  check('Settings lists 3 accounts', (await opts.locator('.account').count()) === 3);
+  await opts.screenshot({ path: path.join(out, 'settings-imported.png'), fullPage: true });
+
+  // 3c. Two accounts on one site: picker appears, choosing the second fills ITS code
+  await p.goto(`${site}/single`);
+  const cdp = await ctx.newCDPSession(p);
+  let target = null;
+  for (let i = 0; i < 30 && !target; i++) {
+    await p.waitForTimeout(300);
+    const { root } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true });
+    const walk = (n) => {
+      if (n.nodeName === 'BUTTON' && (n.children || []).some((c) => c.nodeValue?.includes('second@example.com'))) return n;
+      for (const k of [...(n.children || []), ...(n.shadowRoots || [])]) {
+        const f = walk(k);
+        if (f) return f;
+      }
+      return null;
+    };
+    target = walk(root);
+  }
+  check('Picker shows when a site has two accounts', !!target);
+  check('Nothing filled before choosing', (await p.inputValue('#otp')) === '');
+  await p.screenshot({ path: path.join(out, 'picker.png') });
+  if (target) {
+    const { model } = await cdp.send('DOM.getBoxModel', { backendNodeId: target.backendNodeId });
+    const [x1, y1, , , x3, y3] = model.content;
+    await p.mouse.click((x1 + x3) / 2, (y1 + y3) / 2);
+    await p.waitForSelector('#result', { timeout: 15000 });
+    const txt = await p.textContent('p');
+    check('Chosen account (second) filled and accepted', (await p.textContent('#result')) === 'ACCEPTED' && txt.includes('account second'), txt);
+  }
 
   // 4. Locked: no fill, toast instead
   await opts.click('#lockBtn');

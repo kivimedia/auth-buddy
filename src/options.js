@@ -1,5 +1,6 @@
 import { parseQrText, guessDomain } from './otpauth.js';
 import { totp, base32Decode } from './totp.js';
+import { encryptBackup, decryptBackup } from './backup.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -147,6 +148,51 @@ $('uriBtn').onclick = () => {
   }
 };
 
+// ---------- Backup ----------
+function backupMsg(text, ok = false) {
+  $('backupMsg').textContent = text;
+  $('backupMsg').className = ok ? 'ok' : 'error';
+}
+
+$('importBtn').onclick = () => {
+  if (!$('importPass').value) return backupMsg('Type the backup passphrase first.');
+  $('importFile').click();
+};
+$('importFile').onchange = async () => {
+  const file = $('importFile').files[0];
+  $('importFile').value = '';
+  if (!file) return;
+  backupMsg('Decrypting...', true);
+  try {
+    const list = await decryptBackup(JSON.parse(await file.text()), $('importPass').value);
+    const known = new Set(accounts.map((a) => a.secret));
+    const fresh = list.filter((a) => !known.has(a.secret)).map((a) => ({ ...a, id: crypto.randomUUID() }));
+    accounts.push(...fresh);
+    await call('save', { accounts });
+    $('importPass').value = '';
+    renderAccounts();
+    const skipped = list.length - fresh.length;
+    backupMsg(`Imported ${fresh.length} account${fresh.length === 1 ? '' : 's'}${skipped ? `, ${skipped} already saved` : ''}.`, true);
+  } catch (e) {
+    backupMsg(e instanceof SyntaxError ? 'That file is not an Auth Buddy backup.' : e.message);
+  }
+};
+
+$('exportBtn').onclick = async () => {
+  try {
+    if (!accounts.length) return backupMsg('There are no accounts to back up yet.');
+    const file = await encryptBackup(accounts, $('exportPass').value);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
+    const a = el('a', { href: url, download: `auth-buddy-backup-${new Date().toISOString().slice(0, 10)}.json` });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    $('exportPass').value = '';
+    backupMsg(`Backup of ${accounts.length} accounts downloaded. Keep the passphrase somewhere safe.`, true);
+  } catch (e) {
+    backupMsg(e.message);
+  }
+};
+
 const splitDomains = (s) => s.split(/[\s,]+/).map((d) => d.trim().toLowerCase()).filter(Boolean);
 
 function renderPending() {
@@ -192,15 +238,18 @@ function renderPending() {
   );
 }
 
+$('filter').oninput = () => renderAccounts();
+
 function renderAccounts() {
   $('empty').classList.toggle('hidden', accounts.length > 0);
+  $('filter').classList.toggle('hidden', accounts.length < 6);
+  const q = $('filter').value.trim().toLowerCase();
+  const shown = q ? accounts.filter((a) => [a.issuer, a.label, ...a.domains].join(' ').toLowerCase().includes(q)) : accounts;
   $('accounts').replaceChildren(
-    ...accounts.map((a) => {
-      const domains = el('input', { type: 'text', value: a.domains.join(', ') });
+    ...shown.map((a) => {
+      const domains = el('input', { type: 'text', value: a.domains.join(', '), placeholder: 'Not filled on any site yet: add one, for example github.com' });
       domains.onchange = async () => {
-        const next = splitDomains(domains.value);
-        if (!next.length) return (domains.value = a.domains.join(', '));
-        a.domains = next;
+        a.domains = splitDomains(domains.value);
         await call('save', { accounts });
       };
       const del = el('button', { className: 'danger', textContent: 'Remove' });

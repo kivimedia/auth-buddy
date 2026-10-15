@@ -2,6 +2,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { totp, base32Encode, base32Decode } from '../src/totp.js';
 import { parseQrText, guessDomain, hostMatches } from '../src/otpauth.js';
+import { encryptBackup, decryptBackup } from '../src/backup.js';
+
+test('encrypted backup round trip, wrong passphrase refused', async () => {
+  const accounts = [
+    { id: 'x', issuer: 'LinkedIn', label: 'a@b.com', secret: 'JBSWY3DPEHPK3PXP', algorithm: 'SHA1', digits: 6, period: 30, domains: ['linkedin.com'] },
+    { issuer: 'Unknown', label: '', secret: 'GEZDGNBVGY3TQOJQ', algorithm: 'SHA1', digits: 6, period: 30, domains: [] },
+  ];
+  const file = await encryptBackup(accounts, 'correct horse battery');
+  assert.ok(!JSON.stringify(file).includes('JBSWY3DPEHPK3PXP'));
+  const back = await decryptBackup(JSON.parse(JSON.stringify(file)), 'correct horse battery');
+  assert.equal(back.length, 2);
+  assert.equal(back[0].secret, 'JBSWY3DPEHPK3PXP');
+  assert.deepEqual(back[0].domains, ['linkedin.com']);
+  assert.equal(back[0].id, undefined);
+  await assert.rejects(decryptBackup(file, 'wrong passphrase!'), /Wrong backup passphrase/);
+  await assert.rejects(decryptBackup({ hello: 1 }, 'x'), /not an Auth Buddy backup/);
+  await assert.rejects(encryptBackup(accounts, 'short'), /at least 8/);
+});
 
 const ascii = (s) => base32Encode(new TextEncoder().encode(s));
 const SEEDS = {
