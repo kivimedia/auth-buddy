@@ -193,6 +193,16 @@ try {
   check('PIN box accepts typed keys (popup)', (await popLocked.inputValue('#pin')) === '4321', `value "${await popLocked.inputValue('#pin')}"`);
   await popLocked.close();
 
+  // 4c. An unattended computer reads the state from the window title and unlocks by keyboard alone
+  //     (the VPS helper does exactly this with xdotool after every Chrome restart).
+  const fresh = await ctx.newPage();
+  await fresh.goto(`chrome-extension://${extId}/options.html`);
+  await fresh.waitForFunction(() => document.title === 'Auth Buddy - Locked', null, { timeout: 5000 }).catch(() => {});
+  check('Locked Settings page says so in its title', (await fresh.title()) === 'Auth Buddy - Locked', await fresh.title());
+  check('PIN box has the keyboard when locked', (await fresh.evaluate(() => document.activeElement?.id)) === 'pin',
+    await fresh.evaluate(() => document.activeElement?.id || document.activeElement?.tagName));
+  await fresh.close();
+
   // 5. Unrelated site gets nothing even when unlocked
   await opts.bringToFront();
   await opts.fill('#pin', '0000');
@@ -202,6 +212,7 @@ try {
   await opts.fill('#pin', '4321');
   await opts.click('#unlockBtn');
   await opts.waitForSelector('#app:not(.hidden)');
+  check('Unlocked Settings page title says Settings', (await opts.title()) === 'Auth Buddy Settings', await opts.title());
   await p.bringToFront();
   await p.goto(`http://localhost:${server.address().port}/single`);
   await p.waitForTimeout(2500);

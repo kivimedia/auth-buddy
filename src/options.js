@@ -24,6 +24,10 @@ async function refresh() {
   $('setup').classList.toggle('hidden', status !== 'new');
   $('locked').classList.toggle('hidden', status !== 'locked');
   $('app').classList.toggle('hidden', status !== 'unlocked');
+  // The window title says the state, so a helper on an unattended computer can read it
+  // without looking at the page, and the PIN box takes the keyboard when it is needed.
+  document.title = status === 'locked' ? 'Auth Buddy - Locked' : status === 'new' ? 'Auth Buddy - Set up' : 'Auth Buddy Settings';
+  if (status === 'locked') $('pin').focus();
   if (status === 'unlocked') {
     accounts = await call('list');
     renderAccounts();
