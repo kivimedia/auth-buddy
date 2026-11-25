@@ -17,6 +17,37 @@ Add an account once from a picture of its QR code. After that, when that site as
   one. If a code has less than 3 seconds left, it waits for the next one.
 - **Toolbar popup**: shows the code for the site you are on, with a copy button.
 
+## Codes and sign-in links sent by email
+
+Some sites email the second step instead. For the sites in `src/mailrules.js` Auth Buddy does it
+for you, and a box in the corner of the page says what it is doing, second by second:
+
+- **Authorize.net** "Verify Your Identity": presses "EMAIL PIN TO ...", waits for the PIN email,
+  fills the 8-digit PIN and submits.
+- **Claude** (claude.ai): after you ask for the sign-in email, opens the "Sign in" link from it
+  in the same tab.
+
+Adding a site is one row in `src/mailrules.js` (who sends the mail, the code pattern or the
+link's host and path, and the button to press, if any).
+
+It reads your inbox through a small local helper (`native-host/`) that uses the
+[`gws`](https://github.com/googleworkspace/cli) command line you are already signed in to.
+Set it up once:
+
+```
+node native-host/install.mjs     # finds Auth Buddy in your Chrome profiles and registers the helper
+node test/live-mail-read.mjs 24  # read-only check: finds the last day's codes and links, masked
+```
+
+Safety rules:
+- Only this extension can start the helper (Chrome checks the extension id).
+- The site is taken from Chrome, never from the page. A mail counts only if Gmail's own
+  check says it really came from the site's domain (DMARC or DKIM pass), and only if it arrived
+  after you asked for it. A code or link is never used twice.
+- A link is opened only when its address matches the rule exactly; the page never sees it.
+- The "email me" button is pressed at most once every 3 minutes, so a wrong PIN cannot loop.
+- Email codes work while the PIN vault is locked; they do not use your saved secrets.
+
 ## Security
 
 - Secrets are encrypted with AES-GCM using a key derived from your PIN (PBKDF2-SHA256,
@@ -44,6 +75,7 @@ factor. Lock it (popup or Settings) when you step away.
 npm install
 npm test                 # unit tests, including the RFC 6238 test vectors
 node test/e2e.mjs        # loads the extension in Chromium and logs in to a local test site
+node test/e2e-mail.mjs   # email codes and links: real helper over native messaging, test mailbox
 ```
 
 Set `CHROMIUM_PATH` if Playwright's bundled browser is not installed.

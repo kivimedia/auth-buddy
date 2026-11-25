@@ -1,5 +1,7 @@
 node_modules/
 test/output/
 plans/
+native-host/out/
+native-host/config.json
 *.png
 !icons/*.png

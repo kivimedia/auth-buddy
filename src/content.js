@@ -1,6 +1,6 @@
 // Runs on every page, but does nothing unless the site is one you saved in Auth Buddy.
 (() => {
-  const CODE_WORDS = /(one.?time|otp|totp|2fa|mfa|two.?factor|authenticat|verification|verify|security.?code|auth.?code|\bcode\b|token|passcode)/i;
+  const CODE_WORDS = /(one.?time|otp|totp|2fa|mfa|two.?factor|authenticat|verification|verify|security.?code|auth.?code|\bcode\b|token|passcode|\bpin\b)/i;
   const NOT_CODE = /(promo|coupon|discount|gift|zip|postal|country|captcha|phone|e.?mail|search|user|login|name|card|cvv|cvc)/i;
   const SUBMIT_WORDS = /^(verify|submit|continue|confirm|sign.?in|log.?in|next|done|authenticate|ok)$/i;
 
@@ -154,7 +154,10 @@
       r = await send({ type: 'codeForPage', id });
       if (!r?.ok || !r.result.code) return;
     }
-    const code = r.result.code;
+    putCode(fields, r.result.code);
+  }
+
+  function putCode(fields, code) {
     if (fields.length > 1) fields.forEach((el, i) => setValue(el, code[i] || ''));
     else setValue(fields[0], code);
     fields.forEach((el) => filled.add(el));
@@ -168,8 +171,155 @@
     }
   }
 
+  // ---------- Codes and sign-in links that the site emails you ----------
+  let mailRule = null;
+  const mailPage = () => !!(mailRule?.pageHint && new RegExp(mailRule.pageHint, 'i').test(document.body?.innerText || ''));
+
+  // One status box that updates in place, so you always see what Auth Buddy is doing right now.
+  let statusHost = null;
+  let statusText = null;
+  let statusTimer = null;
+  function status(text, final = false) {
+    if (!statusHost?.isConnected) {
+      statusHost = document.createElement('div');
+      const root = statusHost.attachShadow({ mode: 'closed' });
+      root.innerHTML = `<style>
+        div{position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:340px;padding:12px 14px;border-radius:10px;
+        background:#0f172a;color:#f8fafc;font:14px/1.4 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.3)}
+        b{color:#5eead4}</style><div><b>Auth Buddy</b><br><span></span></div>`;
+      statusText = root.querySelector('span');
+      document.documentElement.appendChild(statusHost);
+    }
+    statusText.textContent = text;
+    clearTimeout(statusTimer);
+    if (final) statusTimer = setTimeout(() => statusHost?.remove(), 9000);
+  }
+
+  const store = (k, v) => {
+    try {
+      if (v === undefined) return Number(sessionStorage.getItem(k) || 0);
+      sessionStorage.setItem(k, String(v));
+    } catch {
+      return 0;
+    }
+  };
+  const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
+  const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  function startMail(rule) {
+    const KEY = `authbuddy-mail-${rule.id}`;
+    const sendRe = rule.sendButton ? new RegExp(rule.sendButton, 'i') : null;
+    const what = rule.kind === 'code' ? 'code' : 'sign-in link';
+    let polling = false;
+    let gaveUp = false;
+
+    // Sign-in link sites: remember the moment you asked for the email, so an older link is never used.
+    if (rule.kind === 'link') {
+      const mark = () => {
+        const typed = [...document.querySelectorAll('input')].some((i) => (i.type === 'email' || /mail|user/i.test(describe(i))) && i.value.includes('@'));
+        if (typed) store(`${KEY}-asked`, Date.now());
+      };
+      document.addEventListener('submit', mark, true);
+      document.addEventListener('click', (e) => e.target.closest?.('button, input[type="submit"], [role="button"]') && mark(), true);
+      document.addEventListener('keydown', (e) => e.key === 'Enter' && mark(), true);
+    }
+
+    function codeFields() {
+      const inputs = [...document.querySelectorAll('input')];
+      const split = findSplit(inputs);
+      if (split) return split;
+      const single = findSingle(inputs);
+      if (single) return [single];
+      // The email-code page itself: its one empty box is the code box.
+      if (!mailPage()) return null;
+      const open = inputs.filter((el) => (textish(el) || el.type === 'password') && visible(el) && !el.value && !filled.has(el));
+      return open.length === 1 ? open : null;
+    }
+
+    async function poll(since, fields) {
+      polling = true;
+      // Never the same mail twice: after a used code or link, only newer mail counts.
+      since = Math.max(since, store(`${KEY}-used`) + 1);
+      const start = Date.now();
+      const waiting = () => status(`Checking your inbox for the ${rule.name} ${what}... ${Math.round((Date.now() - start) / 1000)} s`);
+      waiting();
+      const ticker = setInterval(waiting, 1000);
+      try {
+        while (Date.now() - start < 180e3) {
+          const r = await send({ type: rule.kind === 'code' ? 'mailCode' : 'mailLink', since });
+          const res = r?.ok ? r.result : { error: r?.error || 'the extension did not answer' };
+          if (res.error === 'helper-missing') {
+            status('Cannot read your inbox yet. In the auth-buddy folder run: node native-host/install.mjs', true);
+            gaveUp = true;
+            return;
+          }
+          if (res.error) {
+            status(`Could not read your inbox: ${res.error}`, true);
+            gaveUp = true;
+            return;
+          }
+          if (res.code) {
+            store(`${KEY}-used`, res.receivedAt);
+            if (!fields?.[0]?.isConnected) fields = codeFields();
+            if (!fields) return status(`Found the ${rule.name} code from ${clock(res.receivedAt)}, but the code box is gone.`, true);
+            status(`Found the ${rule.name} code from ${clock(res.receivedAt)}. Filling it in.`, true);
+            putCode(fields, res.code);
+            return;
+          }
+          if (res.opened) {
+            store(`${KEY}-used`, res.receivedAt);
+            status(`Found the ${rule.name} sign-in link from ${clock(res.receivedAt)}. Opening it.`, true);
+            return;
+          }
+          await sleep(4000);
+        }
+        status(`No email from ${rule.name} after 3 minutes. Reload the page to try again.`, true);
+        gaveUp = true;
+      } finally {
+        clearInterval(ticker);
+        polling = false;
+      }
+    }
+
+    function tick() {
+      if (polling || gaveUp) return;
+      const asked = store(`${KEY}-asked`);
+      const recent = asked && Date.now() - asked < 15 * 60e3;
+
+      // 1. The "email me the code" button: press it, at most once every 3 minutes.
+      if (sendRe) {
+        const btn = [...document.querySelectorAll('button, a, input[type="button"], input[type="submit"], [role="button"]')]
+          .filter(visible)
+          .find((b) => sendRe.test((b.textContent || b.value || '').trim()));
+        if (btn && Date.now() - asked > 180e3) {
+          store(`${KEY}-asked`, Date.now());
+          status(`Asking ${rule.name} to email your ${what}...`);
+          btn.click();
+          return;
+        }
+      }
+
+      // 2. Wait for the mail, then fill the code or open the link.
+      if (rule.kind === 'code') {
+        const fields = codeFields();
+        if (fields) poll(recent ? asked - 15e3 : Date.now() - 10 * 60e3, fields);
+      } else if (mailPage() || (asked && Date.now() - asked < 5 * 60e3)) {
+        poll(asked ? asked - 15e3 : Date.now() - 3 * 60e3, null);
+      }
+    }
+
+    let timer = null;
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(tick, 400);
+    };
+    new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+    schedule();
+  }
+
   async function tryFill() {
     if (busy || picker || dismissed) return;
+    if (mailPage()) return; // this code arrives by email, not from the authenticator
     const inputs = [...document.querySelectorAll('input')];
     const split = findSplit(inputs);
     const single = split ? null : findSingle(inputs);
@@ -193,8 +343,16 @@
   }
 
   async function start() {
-    const r = await send({ type: 'siteStatus' });
-    if (!r?.ok || !r.result.saved) return;
+    let r = null;
+    // The background worker may still be waking up: ask again a few times before giving up.
+    for (let i = 0; i < 4 && !r?.ok; i++) {
+      if (i) await new Promise((ok) => setTimeout(ok, 500 * i));
+      r = await send({ type: 'siteStatus' });
+    }
+    if (!r?.ok) return;
+    mailRule = r.result.mail;
+    if (mailRule && window.top === window) startMail(mailRule);
+    if (!r.result.saved) return;
     let timer = null;
     const schedule = () => {
       clearTimeout(timer);
