@@ -71,6 +71,10 @@ factor. Lock it (popup or Settings) when you step away.
 3. Click **Load unpacked** and choose the repository folder.
 4. Settings opens: choose a PIN, then add your first QR code.
 
+Updates: a copy loaded unpacked checks its folder once a minute and reloads itself when the
+version in `manifest.json` changes (after a `git pull`, for example). No click on
+`chrome://extensions` needed. A reload locks Auth Buddy, so authenticator codes ask for your PIN again.
+
 ## Development
 
 ```
@@ -78,6 +82,7 @@ npm install
 npm test                 # unit tests, including the RFC 6238 test vectors
 node test/e2e.mjs        # loads the extension in Chromium and logs in to a local test site
 node test/e2e-mail.mjs   # email codes and links: real helper over native messaging, test mailbox
+node test/e2e-selfupdate.mjs  # reloads itself when the folder gets a new version (~2.5 min)
 ```
 
 Set `CHROMIUM_PATH` if Playwright's bundled browser is not installed.

@@ -108,6 +108,22 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   return true;
 });
 
+// Loaded unpacked (from a folder): once a minute, compare the version in the folder with the running one,
+// and reload when a newer build has landed. No click on chrome://extensions needed after an update.
+// Store installs are updated by Chrome itself, so this does nothing there.
+async function reloadIfUpdatedOnDisk() {
+  try {
+    if ((await chrome.management.getSelf()).installType !== 'development') return;
+    const res = await fetch(chrome.runtime.getURL('manifest.json'), { cache: 'no-store' });
+    const onDisk = (await res.json()).version;
+    if (onDisk && onDisk !== chrome.runtime.getManifest().version) chrome.runtime.reload();
+  } catch {
+    // A manifest caught mid-write is just checked again next minute.
+  }
+}
+chrome.alarms.create('reload-if-updated', { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((a) => a.name === 'reload-if-updated' && reloadIfUpdatedOnDisk());
+
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   if (reason === 'install') chrome.runtime.openOptionsPage();
 });
