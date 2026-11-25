@@ -216,12 +216,27 @@
     // Sign-in link sites: remember the moment you asked for the email, so an older link is never used.
     if (rule.kind === 'link') {
       const mark = () => {
-        const typed = [...document.querySelectorAll('input')].some((i) => (i.type === 'email' || /mail|user/i.test(describe(i))) && i.value.includes('@'));
-        if (typed) store(`${KEY}-asked`, Date.now());
+        const typed = [...document.querySelectorAll('input')].find((i) => (i.type === 'email' || /mail|user/i.test(describe(i))) && /\S+@\S+\.\S+/.test(i.value));
+        if (!typed) return;
+        store(`${KEY}-asked`, Date.now());
+        // Which account: only a link sent to this address will be opened.
+        try {
+          sessionStorage.setItem(`${KEY}-email`, typed.value.trim().toLowerCase());
+        } catch {}
       };
       document.addEventListener('submit', mark, true);
       document.addEventListener('click', (e) => e.target.closest?.('button, input[type="submit"], [role="button"]') && mark(), true);
       document.addEventListener('keydown', (e) => e.key === 'Enter' && mark(), true);
+    }
+
+    // The address you typed, or else the single address the "check your email" page shows.
+    function accountEmail() {
+      try {
+        const typed = sessionStorage.getItem(`${KEY}-email`);
+        if (typed) return typed;
+      } catch {}
+      const shown = [...new Set((document.body?.innerText || '').match(/[^\s@<>"',;:()]+@[^\s@<>"',;:()]+\.[a-z]{2,}/gi) || [])];
+      return shown.length === 1 ? shown[0].toLowerCase() : null;
     }
 
     function codeFields() {
@@ -246,10 +261,15 @@
       const ticker = setInterval(waiting, 1000);
       try {
         while (Date.now() - start < 180e3) {
-          const r = await send({ type: rule.kind === 'code' ? 'mailCode' : 'mailLink', since });
+          const r = await send({ type: rule.kind === 'code' ? 'mailCode' : 'mailLink', since, to: rule.kind === 'link' ? accountEmail() : undefined });
           const res = r?.ok ? r.result : { error: r?.error || 'the extension did not answer' };
           if (res.error === 'helper-missing') {
             status('Cannot read your inbox yet. In the auth-buddy folder run: node native-host/install.mjs', true);
+            gaveUp = true;
+            return;
+          }
+          if (res.error === 'no-email') {
+            status(`Not opening any ${rule.name} link: I could not tell which email address you signed in with. Type it on this page and press Continue.`, true);
             gaveUp = true;
             return;
           }

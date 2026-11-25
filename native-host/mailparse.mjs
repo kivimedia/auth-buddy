@@ -28,7 +28,8 @@ export function parseMessage(m) {
   })(m.payload);
   const html = parts.filter((p) => p.type === 'text/html').map((p) => p.body).join('\n');
   const plain = parts.filter((p) => p.type === 'text/plain').map((p) => p.body).join('\n');
-  return { id: m.id, receivedAt: Number(m.internalDate || 0), from: fromAddr, fromDomain, auth: firstAuth, html, plain };
+  const to = [get('to'), get('cc')].join(',').toLowerCase();
+  return { id: m.id, receivedAt: Number(m.internalDate || 0), from: fromAddr, fromDomain, to, auth: firstAuth, html, plain };
 }
 
 /** Gmail itself says the sender is real: DMARC pass for the From domain, or a DKIM pass signed by an allowed domain. */
@@ -78,11 +79,14 @@ export function extractLink(msg, { host, pathPrefix }) {
 /**
  * Newest matching mail received at or after `since` (ms). Returns { code } or { link } or null.
  * rule: { from: [domains], code?: { pattern }, link?: { host, pathPrefix } }
+ * to:   when given, the mail must be addressed to exactly this address (one inbox, many accounts).
  */
-export function pick(messages, rule, since) {
+export function pick(messages, rule, since, to = null) {
+  const want = to ? String(to).trim().toLowerCase() : null;
+  const addressed = (msg) => !want || msg.to.split(/[\s,<>"]+/).includes(want);
   const parsed = messages.map(parseMessage).filter((m) => m.receivedAt >= since).sort((a, b) => b.receivedAt - a.receivedAt);
   for (const msg of parsed) {
-    if (!domainMatches(msg.fromDomain, rule.from) || !senderVerified(msg, rule.from)) continue;
+    if (!domainMatches(msg.fromDomain, rule.from) || !senderVerified(msg, rule.from) || !addressed(msg)) continue;
     if (rule.code) {
       const code = extractCode(msg, rule.code.pattern);
       if (code) return { code, receivedAt: msg.receivedAt };

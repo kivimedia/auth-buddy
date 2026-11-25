@@ -45,6 +45,8 @@ Safety rules:
   check says it really came from the site's domain (DMARC or DKIM pass), and only if it arrived
   after you asked for it. A code or link is never used twice.
 - A link is opened only when its address matches the rule exactly; the page never sees it.
+- A sign-in link is opened only if the mail was sent to the address you typed on that page, so
+  one inbox that receives links for several accounts never signs you into the wrong one.
 - The "email me" button is pressed at most once every 3 minutes, so a wrong PIN cannot loop.
 - Email codes work while the PIN vault is locked; they do not use your saved secrets.
 

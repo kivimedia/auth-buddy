@@ -2,7 +2,7 @@
 // (see allowed_origins in the host manifest that install.mjs writes).
 // It reads your inbox with the `gws` CLI you are already signed in to and returns ONE code or link.
 //
-// Request:  { type: 'find', since: <ms>, rule: { from: [domains], code?: {pattern}, link?: {host, pathPrefix} } }
+// Request:  { type: 'find', since: <ms>, to?: <address>, rule: { from: [domains], code?: {pattern}, link?: {host, pathPrefix} } }
 // Reply:    { found: true, code | link, receivedAt } | { found: false, checked: n } | { error }
 //
 // Test mode: AUTHBUDDY_MAIL_FIXTURE=<file.json> reads Gmail-shaped messages from that file instead of gws.
@@ -53,10 +53,10 @@ export async function fetchMessages(from, since) {
   return Promise.all(ids.map((id) => gws(['gmail', 'users', 'messages', 'get', '--params', JSON.stringify({ userId: 'me', id, format: 'full' })])));
 }
 
-export async function find({ since, rule }) {
+export async function find({ since, rule, to }) {
   if (!rule?.from?.length || !(rule.code || rule.link)) return { error: 'bad rule' };
   const messages = await fetchMessages(rule.from, since);
-  const hit = pick(messages, rule, since);
+  const hit = pick(messages, rule, since, to);
   return hit ? { found: true, ...hit } : { found: false, checked: messages.length };
 }
 

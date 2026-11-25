@@ -21,9 +21,9 @@ const TEST_BROWSERS = ['Chromium', 'Google\\Chrome for Testing'];
 // ---- fixture mailbox, Gmail API "full" shape ----
 const b64 = (s) => Buffer.from(s).toString('base64url');
 const gauth = (d, ok = true) => `mx.google.com; dkim=${ok ? 'pass' : 'fail'} header.i=@${d} header.s=s1; dmarc=${ok ? 'pass' : 'fail'} (p=REJECT) header.from=${d}`;
-const msg = (id, at, from, auth, html) => ({ id, internalDate: String(at), payload: { mimeType: 'text/html', headers: [{ name: 'Authentication-Results', value: auth }, { name: 'From', value: from }], body: { data: b64(html) } } });
+const msg = (id, at, from, auth, html, to = 'someone@example.com') => ({ id, internalDate: String(at), payload: { mimeType: 'text/html', headers: [{ name: 'Authentication-Results', value: auth }, { name: 'From', value: from }, { name: 'To', value: to }], body: { data: b64(html) } } });
 const pin = (id, at, code, ok = true) => msg(id, at, '"Authorize.Net" <support@authorize.net>', gauth('authorize.net', ok), `<p>Your Verification PIN is: ${code}</p>`);
-const link = (id, at, tok) => msg(id, at, 'Anthropic <no-reply-x@mail.anthropic.com>', gauth('mail.anthropic.com'), `<a href="https://claude.ai/magic-link#${tok}">Sign in</a>`);
+const link = (id, at, tok, to) => msg(id, at, 'Anthropic <no-reply-x@mail.anthropic.com>', gauth('mail.anthropic.com'), `<a href="https://claude.ai/magic-link#${tok}">Sign in</a>`, to);
 let mails = [];
 const setMail = (list) => fs.writeFileSync(mailbox, JSON.stringify((mails = list)));
 setMail([pin('old', Date.now() - 120000, '11111111'), link('oldlink', Date.now() - 60000, 'tok-old')]);
@@ -121,12 +121,14 @@ try {
   await c.goto('https://claude.ai/login');
   await c.fill('#email', 'someone@example.com');
   await c.click('#go');
-  setTimeout(() => setMail([...mails, link('newlink', Date.now(), 'tok-e2e')]), 3000);
+  // Yours lands after 3 s; a link for ANOTHER account in the same inbox lands 0.2 s later (newest, both present at the next check) and must be ignored.
+  setTimeout(() => setMail([...mails, link('newlink', Date.now(), 'tok-e2e', 'Someone <Someone@Example.com>')]), 3000);
+  setTimeout(() => setMail([...mails, link('decoy', Date.now(), 'tok-other-account', 'other@example.com')]), 3200);
   await c.waitForTimeout(2000);
   await snap(c, 'mail-claude-waiting.png');
   await c.waitForURL(/magic-link/, { timeout: 30000 }).catch(() => {});
   check('Claude: opened the NEW sign-in link from the inbox in the same tab', c.url() === 'https://claude.ai/magic-link#tok-e2e', c.url());
-  check('Claude: the older link was never opened', magicHits === 1, `${magicHits} hit(s)`);
+  check('Claude: the older link and the newer link for another account were never opened', magicHits === 1, `${magicHits} hit(s)`);
   await snap(c, 'mail-claude-done.png');
 } catch (e) {
   check('run finished without errors', false, e.message);

@@ -8,12 +8,14 @@ const MAIL_HOST = 'co.kivimedia.authbuddy_mail';
 // What the page may know about its mail rule: hints for the screen, not the senders or patterns.
 const ruleView = (r) => r && { id: r.id, name: r.name, kind: r.link ? 'link' : 'code', sendButton: r.sendButton || null, pageHint: r.pageHint || null };
 
-async function askMail(rule, since) {
+const EMAIL = /^[^\s@<>",]+@[^\s@<>",]+\.[^\s@<>",]+$/;
+
+async function askMail(rule, since, to = null) {
   // A page cannot reach back further than 15 minutes, or into the future.
   const now = Date.now();
   since = Math.min(Math.max(Number(since) || now, now - 15 * 60e3), now);
   try {
-    return await chrome.runtime.sendNativeMessage(MAIL_HOST, { type: 'find', since, rule: { from: rule.from, code: rule.code, link: rule.link } });
+    return await chrome.runtime.sendNativeMessage(MAIL_HOST, { type: 'find', since, to, rule: { from: rule.from, code: rule.code, link: rule.link } });
   } catch (e) {
     return { error: /not found|forbidden/i.test(e.message) ? 'helper-missing' : e.message };
   }
@@ -47,7 +49,10 @@ async function handle(msg, sender) {
     case 'mailLink': {
       const rule = mailRuleFor(sender.url);
       if (!rule?.link) return { none: true };
-      const r = await askMail(rule, msg.since);
+      // One inbox often receives sign-in links for several accounts: only the account typed on this page counts.
+      const to = typeof msg.to === 'string' && EMAIL.test(msg.to.trim()) ? msg.to.trim().toLowerCase() : null;
+      if (!to) return { error: 'no-email' };
+      const r = await askMail(rule, msg.since, to);
       if (!r.found) return r;
       const u = new URL(r.link);
       if (u.protocol !== 'https:' || u.hostname !== rule.link.host || !u.pathname.startsWith(rule.link.pathPrefix)) return { error: 'link did not match' };
